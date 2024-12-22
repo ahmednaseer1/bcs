@@ -11,7 +11,7 @@ const Stack = createNativeStackNavigator();
 
 const Navigator = () => {
 
-    const [loggedIn, setLoggedIn] = useState(false)
+    const [loggedIn, setLoggedIn] = useState(true)
 
     return (
         <Stack.Navigator>

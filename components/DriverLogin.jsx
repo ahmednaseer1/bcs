@@ -130,7 +130,7 @@ const DriverLogin = () => {
     );
 }
 
-const styles = StyleSheet.create({
+export const styles = StyleSheet.create({
     formContainer:{
         width: width * 0.9,
         height:height * 0.7,
