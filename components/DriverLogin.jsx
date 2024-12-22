@@ -34,7 +34,7 @@ const DriverLogin = () => {
     const handleLogin = async () => {
         setLoading(true);
         try {
-            const response = await fetch('http://192.168.0.13:8000/Drive/login/', {
+            const response = await fetch('http://192.168.0.13:8000/Driver/login/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
