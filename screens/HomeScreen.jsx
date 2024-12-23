@@ -1,231 +1,468 @@
-import { View, Text, Dimensions, Modal, TextInput, TouchableOpacity, StyleSheet } from "react-native";
-import { useState } from "react";
-import axios from 'axios';
-import { GOOGLE_MAPS_API_KEY } from '@env';
+import React, { useEffect, useState, useRef } from "react";
+import { View, Text, Dimensions, Modal, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import axios from "axios";
+import { getDistance } from 'geolib';
+import { GOOGLE_MAPS_API_KEY } from "@env";
+import MapView, { Marker, Polyline } from "react-native-maps";
+import * as Location from "expo-location";
+import polyline from "@mapbox/polyline";
+import { MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 
-console.log(GOOGLE_MAPS_API_KEY);
 
-const {width, height} = Dimensions.get('screen')
+const { width, height } = Dimensions.get("screen");
 
+const decodePolyline = (encoded) => {
+  return polyline.decode(encoded).map((point) => ({
+    latitude: point[0],
+    longitude: point[1],
+  }));
+};
 
 const HomeScreen = () => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [pickUpLocation, setPickUpLocation] = useState(null);
+  const [dropLocation, setDropLocation] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [activeField, setActiveField] = useState(null);
+  const [inputValue, setInputValue] = useState("");
+  const [currentLoc, setCurrentLoc] = useState(null);
+  const [directions, setDirections] = useState(null);
+  const [fare, setFare] = useState(null);
+  const [eta, setEta] = useState(null);
+  const [ride, setRide] = useState ('bike')
+  const mapRef = useRef(null);
 
-    const [suggestions, setSuggestions] = useState([]);
-    const GOOGLE_API_KEY = GOOGLE_MAPS_API_KEY;
-    const [pickUpLocation, setPickUpLocation] = useState('');
-    const [dropLocation, setDropLocation] = useState('');
-    const [modalVisible, setModalVisible] = useState(false);
-    const [activeField, setActiveField] = useState(null);
-    const [inputValue, setInputValue] = useState('');
-    const [loading, setLoading] = useState(false);
+  const GOOGLE_API_KEY = GOOGLE_MAPS_API_KEY;
 
-    const openModal = (field, currentValue) => {
-        setActiveField(field);
-        setInputValue(currentValue);
-        setModalVisible(true);
-    };
+  const openModal = (field, currentValue) => {
+    setActiveField(field);
+    setInputValue(currentValue ? JSON.stringify(currentValue) : "");
+    setModalVisible(true);
+  };
 
-    const closeModal = () => {
-        setModalVisible(false);
-        setActiveField(null);
-    };
+  const closeModal = () => {
+    setModalVisible(false);
+    setActiveField(null);
+    setSuggestions([]);
+  };
 
-    const handleSave = () => {
-        if (activeField === 'pickUpLocation') setPickUpLocation(inputValue);
-        else if (activeField === 'dropLocation') setDropLocation(inputValue);
-        closeModal();
-    };
-
-    const updateSuggestions = async (text) => {
-        if (text.trim() === '') {
-            setSuggestions([]);
-            return;
+  const handleSave = async () => {
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/geocode/json`,
+        {
+          params: {
+            address: inputValue,
+            key: GOOGLE_API_KEY,
+          },
         }
-    
-        try {
-            const response = await axios.get(
-                `https://maps.googleapis.com/maps/api/place/autocomplete/json`,
-                {
-                    params: {
-                        input: text,
-                        key: GOOGLE_API_KEY,
-                        types: 'geocode', // Suggest only locations
-                        components: 'country:in', // Limit suggestions to India (optional)
-                    },
-                }
-            );
-            const predictions = response.data.predictions;
-            setSuggestions(predictions.map((place) => place.description));
-        } catch (error) {
-            console.error('Error fetching suggestions:', error);
-        }
-    };
+      );
 
-    const Locations = () => {
-        return(
-            <View >
-                <TouchableOpacity style={[styles.input]} onPress={() => openModal('pickUpLocation', pickUpLocation)}>
-                    <TextInput
-                        placeholder="Enter pickup location"
-                        value={pickUpLocation}
-                        editable={false}
-                    />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.input]} onPress={() => openModal('dropLocation', dropLocation)}>
-                    <TextInput
-                        placeholder="Enter Drop location"
-                        value={dropLocation}
-                        editable={false}
-                    />
-                </TouchableOpacity>
-            </View>
-        )
+      const location = response.data.results[0]?.geometry.location; // Get lat/lng
+      if (!location) {
+        Alert.alert("Error", "Unable to fetch location.");
+        return;
+      }
+
+      const formattedLocation = {
+        latitude: location.lat,
+        longitude: location.lng,
+      };
+
+      if (activeField === "pickUpLocation") setPickUpLocation(formattedLocation);
+      else if (activeField === "dropLocation") setDropLocation(formattedLocation);
+
+      closeModal();
+    } catch (error) {
+      console.error("Error saving location:", error);
+      Alert.alert("Error", "Failed to fetch location.");
+    }
+  };
+
+  const updateSuggestions = async (text) => {
+    if (text.trim() === "") {
+      setSuggestions([]);
+      return;
     }
 
-    return (
-        <View style={[styles.locationArea]}>
-            <Locations/>
-            <Text>
-                this is the home screen
-            </Text>
-            <Modal
-                transparent={true}
-                visible={modalVisible}
-                animationType="slide"
-                onRequestClose={closeModal}
-            >
-                <View style={styles.modalBackground}>
-                    <View style={styles.modalContainer}>
-                        <Text style={styles.modalTitle}>Enter {activeField}</Text>
-                        <TextInput
-                            style={styles.modalInput}
-                            placeholder={`Enter ${activeField}`}
-                            value={inputValue}
-                            onChangeText={(text) => {
-                                setInputValue(text);
-                                updateSuggestions(text); // Fetch suggestions from Google API
-                            }}
-                        />
-                        
-                        {/* Suggestions List */}
-                        {suggestions.length > 0 && (
-                            <View style={styles.suggestionsContainer}>
-                                {suggestions.map((suggestion, index) => (
-                                    <TouchableOpacity
-                                        key={index}
-                                        style={styles.suggestionItem}
-                                        onPress={() => {
-                                            setInputValue(suggestion);
-                                            setSuggestions([]); // Clear suggestions after selection
-                                        }}
-                                    >
-                                        <Text style={styles.suggestionText}>{suggestion}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json`,
+        {
+          params: {
+            input: text,
+            key: GOOGLE_MAPS_API_KEY,
+            types: "geocode",
+            components: "country:in",
+          },
+        }
+      );
+      const predictions = response.data.predictions;
+      setSuggestions(predictions.map((place) => place.description));
+    } catch (error) {
+      console.error("Error fetching suggestions:", error);
+    }
+  };
 
-                        <View style={styles.buttonContainer}>
-                            <TouchableOpacity onPress={closeModal} style={styles.button}>
-                                <Text style={styles.buttonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleSave} style={styles.button}>
-                                <Text style={styles.buttonText}>Save</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-        </View>
-        
+  useEffect(() => {
+    (async () => {
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission to access location was denied");
+          return;
+        }
+
+        let currentLocation = await Location.getCurrentPositionAsync({});
+        setCurrentLoc({
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        });
+      } catch (error) {
+        console.error("Error getting location:", error);
+      }
+    })();
+  }, []);
+
+  const getDirections = async () => {
+    if (!pickUpLocation || !dropLocation) {
+      Alert.alert("Error", "Please set both pickup and drop locations.");
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/directions/json`,
+        {
+          params: {
+            origin: `${pickUpLocation.latitude},${pickUpLocation.longitude}`,
+            destination: `${dropLocation.latitude},${dropLocation.longitude}`,
+            key: GOOGLE_API_KEY,
+          },
+        }
+      );
+
+      const points = response.data.routes[0]?.overview_polyline?.points;
+      if (points) {
+        const decodedPoints = decodePolyline(points);
+        setDirections(decodedPoints);
+      } else {
+        Alert.alert("Error", "No directions found.");
+      }
+    } catch (error) {
+      console.error("Error fetching directions:", error);
+      Alert.alert("Error", "Failed to fetch directions.");
+    }
+  };
+
+  const calculateFare = () => {
+    if (!pickUpLocation || !dropLocation) return;
+  
+    const distance = getDistance(
+      { latitude: pickUpLocation.latitude, longitude: pickUpLocation.longitude },
+      { latitude: dropLocation.latitude, longitude: dropLocation.longitude }
     );
-}
+  
+    let totalFare = 0; // Declare totalFare outside the blocks
+  
+    if (ride === 'bike') {
+      const baseFare = 50;
+      const ratePerKm = 10;
+      totalFare = baseFare + ratePerKm * (distance / 1000);
+    } else if (ride === 'car') {
+      const baseFare = 70;
+      const ratePerKm = 20;
+      totalFare = baseFare + ratePerKm * (distance / 1000);
+    } else if (ride === 'auto') {
+      const baseFare = 60;
+      const ratePerKm = 15;
+      totalFare = baseFare + ratePerKm * (distance / 1000);
+    }
+  
+    setFare(totalFare.toFixed(2)); // Set the fare after calculation
+  };
+  
+  const getETA = async () => {
+    if (!pickUpLocation || !dropLocation) return;
+
+    const origin = `${pickUpLocation.latitude},${pickUpLocation.longitude}`;
+    const destination = `${dropLocation.latitude},${dropLocation.longitude}`;
+
+    const response = await axios.get(
+      `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_API_KEY}`
+    );
+
+    const etaValue = response.data.routes[0].legs[0].duration.text;
+    setEta(etaValue);
+  };
+
+  useEffect(() => {
+    calculateFare();
+    getETA();
+    getDirections();
+  }, [ride, pickUpLocation, dropLocation]);
+
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.locationPutarea}>
+        <TouchableOpacity
+          style={styles.input}
+          onPress={() => openModal("pickUpLocation", pickUpLocation)}
+        >
+          <Text>{pickUpLocation ? `${pickUpLocation.latitude}, ${pickUpLocation.longitude}` : "Enter pickup location"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.input}
+          onPress={() => openModal("dropLocation", dropLocation)}
+        >
+          <Text>{dropLocation ? `${dropLocation.latitude}, ${dropLocation.longitude}` : "Enter drop location"}</Text>
+        </TouchableOpacity>
+      </View>
+
+      
+        
+      
+
+      {currentLoc && (
+        <View style={styles.mapContainer}>
+            <MapView
+            ref={mapRef}
+            style={styles.map}
+            initialRegion={currentLoc}
+            showsUserLocation
+            >
+            {pickUpLocation && <Marker coordinate={pickUpLocation} title="Pickup Location" />}
+            {dropLocation && <Marker coordinate={dropLocation} title="Drop Location" />}
+            {directions && <Polyline coordinates={directions} strokeWidth={3} strokeColor="orange" />}
+            </MapView>
+        </View>
+      )}
+
+    <View style={styles.detailsContainer}>
+        <Text style={styles.detailsText}>Fare: ₹{fare ? fare : 'Amount'}</Text>
+        <Text style={styles.detailsText}>ETA: {eta ? eta : 'minutes'}</Text>
+    </View>
+
+    <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems:'center', marginVertical: 20, }}>
+        {/* Bike Button */}
+        <TouchableOpacity
+          style={[
+            styles.buton,
+            {
+              backgroundColor: ride === 'bike' ? 'black' : '#ccc',
+              padding: 10,
+              borderRadius: 5,
+              width: ride === 'bike' ? 120 : 100,
+              height: ride === 'bike' ? 80 : 60,
+
+            },
+          ]}
+          onPress={() => setRide('bike')}
+        >
+          <FontAwesome5 name="motorcycle" size={20} color="orange" style={{ marginBottom: 5 }} />
+          <Text style={{ color: 'orange' }}>Bike</Text>
+        </TouchableOpacity>
+
+        {/* Car Button */}
+        <TouchableOpacity
+          style={[
+            styles.buton,
+            {
+              backgroundColor: ride === 'car' ? 'black' : '#ccc',
+              padding: 10,
+              borderRadius: 5,
+              width: ride === 'car' ? 120 : 100,
+              height: ride === 'car' ? 80 : 60,
+            },
+          ]}
+          onPress={() => setRide('car')}
+        >
+          <MaterialCommunityIcons name="car" size={20} color="orange" style={{ marginBottom: 5 }} />
+          <Text style={{ color: 'orange' }}>Car</Text>
+        </TouchableOpacity>
+
+        {/* Auto Button */}
+        <TouchableOpacity
+          style={[
+            styles.buton,
+            {
+              backgroundColor: ride === 'auto' ? 'black' : '#ccc',
+              padding: 10,
+              borderRadius: 5,
+              width: ride === 'auto' ? 120 : 100,
+              height: ride === 'auto' ? 80 : 60,
+            },
+          ]}
+          onPress={() => setRide('auto')}
+        >
+          <MaterialCommunityIcons name="rickshaw" size={20} color="orange" style={{ marginBottom: 5 }} />
+          <Text style={{ color: 'orange' }}>Auto</Text>
+        </TouchableOpacity>
+      </View>
+
+
+      <Modal
+        transparent
+        visible={modalVisible}
+        animationType="slide"
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Enter {activeField}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={inputValue}
+              onChangeText={(text) => {
+                setInputValue(text);
+                updateSuggestions(text);
+              }}
+            />
+            {suggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {suggestions.map((suggestion, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    onPress={() => {
+                      setInputValue(suggestion);
+                      setSuggestions([]);
+                    }}
+                    style={styles.suggestionline}
+                  >
+                    <Text>{suggestion}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity onPress={closeModal} style={styles.button}>
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave} style={styles.button}>
+                <Text style={styles.buttonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
-    inputContainer:{
-        justifyContent:'space-around',
-        alignItems:'center'
-    },
-    input: {
-        width: '100%',
-        padding: 10,
-        borderColor: 'gray',
-        borderWidth: 1,
-        borderRadius: 5,
-        marginVertical: 10,
-        backgroundColor: '#f9f9f9',
-        shadowColor:'#000',
-        shadowOffset: { width: 5, height: 5 }, 
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 8,
-    },
-    modalBackground: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    },
-    modalContainer: {
-        width: 300,
-        padding: 20,
-        backgroundColor: 'white',
-        borderRadius: 10,
-        alignItems: 'center',
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 15,
-    },
-    modalInput: {
-        width: '100%',
-        padding: 10,
-        borderColor: 'gray',
-        borderWidth: 1,
-        borderRadius: 5,
-        marginBottom: 20,
-    },
-    buttonContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        width: '100%',
-    },
-    button: {
-        flex: 1,
-        alignItems: 'center',
-        padding: 10,
-        backgroundColor:'black',
-        borderRadius:20,
-        margin:5
-    },
-    buttonText: {
-        color: 'orange',
-        fontSize: 16,
-    },
-    suggestionsContainer: {
-        marginTop: 10,
-        width: '100%',
-        backgroundColor: '#f9f9f9',
-        borderColor: '#ccc',
-        borderWidth: 1,
-        borderRadius: 5,
-        maxHeight: 200,
-        overflow: 'hidden',
-    },
-    suggestionItem: {
-        padding: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#ddd',
-    },
-    suggestionText: {
-        fontSize: 16,
-        color: '#333',
-    },
-    locationArea:{
-        padding:20,
-
-    }
-})
+  container: {
+    flex: 1,
+    padding: 10,
+    alignItems:'center',
+  },
+  input: {
+    padding: 15,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    marginBottom: 10,
+    width:width*0.9,
+  },
+  map: {
+    width: "100%",
+    height: height / 3,
+  },
+  modalBackground: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContainer: {
+    width: 300,
+    backgroundColor: "#fff",
+    padding: 20,
+    borderRadius: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    marginBottom: 10,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-evenly",
+  },
+  button: {
+    padding: 10,
+    backgroundColor: "#007BFF",
+    borderRadius: 8,
+    width:100,
+  },
+  buttonText: {
+    color: "#fff",
+    textAlign: "center",
+  },
+  suggestionsContainer: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    maxHeight: 250,
+    overflow: "scroll",
+  },
+  suggestionline: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 5,
+    margin: 5,
+  },
+  buton: {
+    width: 100,
+    height: 60,
+    backgroundColor: "black",
+    justifyContent: "center",
+    borderRadius: 20,
+    margin: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 5, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+    alignItems:'center',
+  },
+  locationPutarea: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mapContainer: {
+    borderRadius: 20, // Adjust as needed
+    overflow: 'hidden',
+    width: "100%", // Adjust to your desired width
+    height: height / 3, // Match the height of your map
+  },
+  detailsContainer:{
+    flexDirection:'row',
+    width:width*0.9,
+    height: 100,
+    justifyContent:'space-evenly',
+    alignItems:'center',
+    backgroundColor:'black',
+    margin:10,
+    borderRadius:20,
+  },
+  detailsText:{
+    color:'orange',
+    fontSize:15,
+    fontWeight:'bold'
+  }
+  
+});
 
 export default HomeScreen;
