@@ -7,6 +7,9 @@ import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from "expo-location";
 import polyline from "@mapbox/polyline";
 import { MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
+import Geocoder from 'react-native-geocoding';
+
+Geocoder.init(GOOGLE_MAPS_API_KEY); // Replace with your actual Google Maps API key
 
 
 const { width, height } = Dimensions.get("screen");
@@ -29,6 +32,8 @@ const HomeScreen = () => {
   const [directions, setDirections] = useState(null);
   const [fare, setFare] = useState(null);
   const [eta, setEta] = useState(null);
+  const [pickUpAddress, setPickUpAddress] = useState(null)
+  const [dropAddress, setDropAddress] = useState(null);
   const [ride, setRide] = useState ('bike')
   const mapRef = useRef(null);
 
@@ -128,7 +133,6 @@ const HomeScreen = () => {
 
   const getDirections = async () => {
     if (!pickUpLocation || !dropLocation) {
-      Alert.alert("Error", "Please set both pickup and drop locations.");
       return;
     }
 
@@ -205,6 +209,89 @@ const HomeScreen = () => {
   }, [ride, pickUpLocation, dropLocation]);
 
 
+  // Function to render location
+    const renderLocation = (location) => {
+        if (location) {
+        return `${location.latitude}, ${location.longitude}`;
+        }
+        return "Enter location";
+    };
+
+    // testing out
+    const fetchAddress = async (location, setAddress) => {
+        if (!location) return;
+        try {
+          const response = await axios.get(
+            `https://maps.googleapis.com/maps/api/geocode/json`,
+            {
+              params: {
+                latlng: `${location.latitude},${location.longitude}`,
+                key: GOOGLE_MAPS_API_KEY,
+              },
+            }
+          );
+          if (response.data.results && response.data.results.length > 0) {
+            const components = response.data.results[0].address_components;
+      
+            // Extract local area details
+            const neighborhood = components.find((c) =>
+              c.types.includes("neighborhood")
+            )?.long_name || "";
+      
+            const sublocality = components.find((c) =>
+              c.types.includes("sublocality")
+            )?.long_name || "";
+      
+            const locality = components.find((c) =>
+              c.types.includes("locality")
+            )?.long_name || "";
+      
+            const state = components.find((c) =>
+              c.types.includes("administrative_area_level_1")
+            )?.long_name || "";
+      
+            const country = components.find((c) =>
+              c.types.includes("country")
+            )?.long_name || "";
+      
+            // Create a readable address
+            const detailedAddress = `${neighborhood || sublocality || locality}, ${locality}, ${state}, ${country}`;
+      
+            setAddress(detailedAddress.trim());
+        } else {
+            setAddress("Address not found");
+          }
+        } catch (error) {
+          console.error("Error fetching address:", error);
+          setAddress("Error fetching address");
+        }
+      };
+    
+      // Fetch pickup address whenever pickUpLocation changes
+      useEffect(() => {
+        fetchAddress(pickUpLocation, setPickUpAddress);
+      }, [pickUpLocation]);
+    
+      // Fetch drop address whenever dropLocation changes
+      useEffect(() => {
+        fetchAddress(dropLocation, setDropAddress);
+      }, [dropLocation]);
+
+      useEffect(() => {
+        // Animate to the pickup location when it's set
+        if (pickUpLocation && mapRef.current) {
+          mapRef.current.animateToRegion(
+            {
+              latitude: pickUpLocation.latitude,
+              longitude: pickUpLocation.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            },
+            1000 // Animation duration in milliseconds
+          );
+        }
+      }, [pickUpLocation]);
+
   return (
     <View style={styles.container}>
       <View style={styles.locationPutarea}>
@@ -212,13 +299,13 @@ const HomeScreen = () => {
           style={styles.input}
           onPress={() => openModal("pickUpLocation", pickUpLocation)}
         >
-          <Text>{pickUpLocation ? `${pickUpLocation.latitude}, ${pickUpLocation.longitude}` : "Enter pickup location"}</Text>
+          <Text>Pickup: {pickUpAddress}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.input}
           onPress={() => openModal("dropLocation", dropLocation)}
         >
-          <Text>{dropLocation ? `${dropLocation.latitude}, ${dropLocation.longitude}` : "Enter drop location"}</Text>
+          <Text>Drop: {dropAddress}</Text>
         </TouchableOpacity>
       </View>
 
