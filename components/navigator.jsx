@@ -6,6 +6,7 @@ import WelcomeScreen from "../screens/welcomeScreen";
 import LoginScreen from '../screens/loginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
+import RideScreen from '../screens/RideScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -19,6 +20,11 @@ const Navigator = () => {
                 <Stack.Screen
                     name='HomeScreen'
                     component={HomeScreen}
+                    options={{headerShown:false}}
+                />
+                <Stack.Screen
+                    name='RideScreen'
+                    component={RideScreen}
                     options={{headerShown:false}}
                 />
             </>) : (<>
@@ -41,5 +47,7 @@ const Navigator = () => {
         </Stack.Navigator>
     );
 }
+
+
 
 export default Navigator;
